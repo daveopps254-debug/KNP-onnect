@@ -1,0 +1,9 @@
+{
+  "appId": "app.lovable.68d91099adb94b1cbda86bc06573511e",
+  "appName": "KNP Connect",
+  "webDir": "dist",
+  "server": {
+    "url": "https://68d91099-adb9-4b1c-bda8-6bc06573511e.lovableproject.com?forceHideBadge=true",
+    "cleartext": true
+  }
+}
