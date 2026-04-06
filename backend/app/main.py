@@ -3,28 +3,33 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.database import init_db
 import os
+from app.config import get_settings
 
 app = FastAPI(title="KNP Connect API", version="1.0.0")
 
-# Disable CORS. Do not remove this for full-stack development.
+settings = get_settings()
+
+# CORS: permissive only in development; locked down otherwise.
+cors_origins = ["*"] if settings.environment == "development" else settings.cors_origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],  # Allows all methods
     allow_headers=["*"],  # Allows all headers
 )
 
-# Create uploads directory
-UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")
-os.makedirs(os.path.join(UPLOAD_DIR, "profiles"), exist_ok=True)
-os.makedirs(os.path.join(UPLOAD_DIR, "posts"), exist_ok=True)
-os.makedirs(os.path.join(UPLOAD_DIR, "covers"), exist_ok=True)
-os.makedirs(os.path.join(UPLOAD_DIR, "groups"), exist_ok=True)
-os.makedirs(os.path.join(UPLOAD_DIR, "stories"), exist_ok=True)
+# Local uploads are useful for development; production should use S3/MinIO.
+if settings.environment != "production":
+    UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")
+    os.makedirs(os.path.join(UPLOAD_DIR, "profiles"), exist_ok=True)
+    os.makedirs(os.path.join(UPLOAD_DIR, "posts"), exist_ok=True)
+    os.makedirs(os.path.join(UPLOAD_DIR, "covers"), exist_ok=True)
+    os.makedirs(os.path.join(UPLOAD_DIR, "groups"), exist_ok=True)
+    os.makedirs(os.path.join(UPLOAD_DIR, "stories"), exist_ok=True)
 
-# Serve uploaded files
-app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+    # Serve uploaded files
+    app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 # Include routers
 from app.routers import auth, users, posts, groups, admin, notifications, settings, messages, stories, reports

@@ -11,6 +11,7 @@ fastapi = {extras = ["standard"], version = "^0.135.1"}
 psycopg = {extras = ["binary"], version = "^3.3.3"}
 sqlalchemy = "^2.0.48"
 aiosqlite = "^0.22.1"
+alembic = "^1.16.5"
 python-jose = {extras = ["cryptography"], version = "^3.5.0"}
 passlib = {extras = ["bcrypt"], version = "^1.7.4"}
 python-multipart = "^0.0.22"

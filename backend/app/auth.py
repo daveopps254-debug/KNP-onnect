@@ -10,8 +10,10 @@ from app.models import User
 import os
 import random
 import string
+from app.config import get_settings
 
-SECRET_KEY = os.getenv("SECRET_KEY", "knp-connect-super-secret-key-change-in-production-2026")
+settings = get_settings()
+SECRET_KEY = settings.require_secret_key()
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
 

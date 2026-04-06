@@ -1,13 +1,15 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
-import os
+from app.config import get_settings
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./knp_connect.db")
+settings = get_settings()
+DATABASE_URL = settings.database_url
 
 engine = create_engine(
     DATABASE_URL,
     connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {},
     echo=False,
+    pool_pre_ping=True,
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -31,4 +33,7 @@ def init_db():
         Department, Notification, PostMedia, Message,
         GroupMessage, UserSettings, Story, Report,
     )
-    Base.metadata.create_all(bind=engine)
+    # In production we rely on Alembic migrations.
+    # For local development (SQLite) it's useful to bootstrap quickly.
+    if settings.environment != "production" and "sqlite" in DATABASE_URL:
+        Base.metadata.create_all(bind=engine)
