@@ -9,10 +9,10 @@ interface StoryCircleProps {
 }
 
 const StoryCircle = ({ name, isOwn = false, hasStatus = true, avatarUrl, onClick }: StoryCircleProps) => {
-  const { profile } = useAuth();
+  const { user } = useAuth();
 
-  const displayAvatar = isOwn ? profile?.avatar_url : avatarUrl;
-  const displayInitial = isOwn ? (profile?.full_name?.charAt(0) || "U") : (name?.charAt(0) || "U");
+  const displayAvatar = isOwn ? user?.profile_picture : avatarUrl;
+  const displayInitial = isOwn ? (user?.full_name?.charAt(0) || "U") : (name?.charAt(0) || "U");
 
   return (
     <button onClick={onClick} className="flex flex-col items-center gap-1 min-w-[60px]">

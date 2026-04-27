@@ -9,13 +9,10 @@ from app.schemas import (
 from app.auth import get_current_active_user
 from app.routers.auth import user_to_response
 from typing import Optional
-import os
-import uuid
-import shutil
+from app.services.media import get_media_storage
+from app.realtime import broker
 
 router = APIRouter(prefix="/api/posts", tags=["Posts"])
-
-UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "uploads")
 
 
 def post_to_response(post: Post, db: Session, current_user_id: int) -> PostResponse:
@@ -77,20 +74,15 @@ async def create_post(
     db.refresh(post)
 
     # Handle media uploads
+    storage = get_media_storage()
     for file in files:
         if file.filename:
-            ext = file.filename.split(".")[-1]
-            filename = f"{uuid.uuid4()}.{ext}"
             media_type = "video" if file.content_type and file.content_type.startswith("video/") else "image"
-            filepath = os.path.join(UPLOAD_DIR, "posts", filename)
-            os.makedirs(os.path.dirname(filepath), exist_ok=True)
-
-            with open(filepath, "wb") as buffer:
-                shutil.copyfileobj(file.file, buffer)
+            file_url = storage.save_upload(file, "posts")
 
             media = PostMedia(
                 post_id=post.id,
-                file_url=f"/uploads/posts/{filename}",
+                file_url=file_url,
                 media_type=media_type,
             )
             db.add(media)
@@ -200,6 +192,11 @@ async def toggle_like(
             db.add(notif)
 
         db.commit()
+        if post.author_id != current_user.id:
+            await broker.publish(
+                f"notif:{post.author_id}",
+                {"type": "notification", "notification_type": "like", "post_id": post_id},
+            )
         return {"message": "Liked", "is_liked": True, "likes_count": len(post.likes)}
 
 
@@ -235,6 +232,11 @@ async def add_comment(
         db.add(notif)
 
     db.commit()
+    if post.author_id != current_user.id:
+        await broker.publish(
+            f"notif:{post.author_id}",
+            {"type": "notification", "notification_type": "comment", "post_id": post_id},
+        )
     db.refresh(comment)
 
     return CommentResponse(

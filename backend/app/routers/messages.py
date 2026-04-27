@@ -6,6 +6,7 @@ from app.models import User, Message, Notification, NotificationType
 from app.schemas import MessageCreate, MessageResponse
 from app.auth import get_current_active_user
 from app.routers.auth import user_to_response
+from app.realtime import broker
 
 router = APIRouter(prefix="/api/messages", tags=["Messages"])
 
@@ -108,6 +109,18 @@ async def send_message(
     db.add(message)
     db.commit()
     db.refresh(message)
+
+    await broker.publish(
+        f"chat:{min(current_user.id, data.receiver_id)}:{max(current_user.id, data.receiver_id)}",
+        {
+            "type": "message",
+            "id": message.id,
+            "sender_id": current_user.id,
+            "receiver_id": data.receiver_id,
+            "content": message.content,
+            "created_at": message.created_at,
+        },
+    )
 
     return MessageResponse(
         id=message.id,

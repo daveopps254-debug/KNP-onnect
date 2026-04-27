@@ -1,0 +1,22 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: knp-connect-migrate
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: migrate
+          image: knp-connect-api:latest
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: knp-connect-config
+            - secretRef:
+                name: knp-connect-secret
+          command: ["sh", "-lc"]
+          args:
+            - |
+              alembic -c alembic.ini upgrade head
+

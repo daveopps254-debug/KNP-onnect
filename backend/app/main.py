@@ -1,11 +1,13 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.database import init_db
 import os
 from app.config import get_settings
+from app.observability import RequestIdMiddleware
 
 app = FastAPI(title="KNP Connect API", version="1.0.0")
+app.add_middleware(RequestIdMiddleware)
 
 settings = get_settings()
 
@@ -33,6 +35,7 @@ if settings.environment != "production":
 
 # Include routers
 from app.routers import auth, users, posts, groups, admin, notifications, settings, messages, stories, reports
+from app import ws
 
 app.include_router(auth.router)
 app.include_router(users.router)
@@ -44,6 +47,7 @@ app.include_router(settings.router)
 app.include_router(messages.router)
 app.include_router(stories.router)
 app.include_router(reports.router)
+app.include_router(ws.router)
 
 
 @app.on_event("startup")
@@ -54,3 +58,25 @@ async def startup():
 @app.get("/healthz")
 async def healthz():
     return {"status": "ok"}
+
+
+@app.get("/readyz")
+async def readyz():
+    # Basic connectivity checks
+    from app.database import engine
+    from sqlalchemy import text
+
+    with engine.connect() as conn:
+        conn.execute(text("SELECT 1"))
+    return {"status": "ready"}
+
+
+@app.get("/metrics")
+async def metrics():
+    try:
+        from prometheus_client import generate_latest, CONTENT_TYPE_LATEST  # type: ignore
+    except Exception:
+        return {"error": "prometheus-client not installed"}
+
+    data = generate_latest()
+    return Response(content=data, media_type=CONTENT_TYPE_LATEST)

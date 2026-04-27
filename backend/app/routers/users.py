@@ -5,13 +5,9 @@ from app.models import User, followers_table
 from app.schemas import UserResponse, UserUpdate, UserProfileResponse
 from app.auth import get_current_active_user
 from app.routers.auth import user_to_response
-import os
-import uuid
-import shutil
+from app.services.media import get_media_storage
 
 router = APIRouter(prefix="/api/users", tags=["Users"])
-
-UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "uploads")
 
 
 @router.get("/", response_model=list[UserResponse])
@@ -73,16 +69,8 @@ async def upload_profile_picture(
 ):
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File must be an image")
-
-    ext = file.filename.split(".")[-1] if file.filename else "jpg"
-    filename = f"{uuid.uuid4()}.{ext}"
-    filepath = os.path.join(UPLOAD_DIR, "profiles", filename)
-    os.makedirs(os.path.dirname(filepath), exist_ok=True)
-
-    with open(filepath, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-
-    current_user.profile_picture = f"/uploads/profiles/{filename}"
+    storage = get_media_storage()
+    current_user.profile_picture = storage.save_upload(file, "profiles")
     db.commit()
     db.refresh(current_user)
     return user_to_response(current_user, db)
@@ -96,16 +84,8 @@ async def upload_cover_photo(
 ):
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File must be an image")
-
-    ext = file.filename.split(".")[-1] if file.filename else "jpg"
-    filename = f"{uuid.uuid4()}.{ext}"
-    filepath = os.path.join(UPLOAD_DIR, "covers", filename)
-    os.makedirs(os.path.dirname(filepath), exist_ok=True)
-
-    with open(filepath, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-
-    current_user.cover_photo = f"/uploads/covers/{filename}"
+    storage = get_media_storage()
+    current_user.cover_photo = storage.save_upload(file, "covers")
     db.commit()
     db.refresh(current_user)
     return user_to_response(current_user, db)

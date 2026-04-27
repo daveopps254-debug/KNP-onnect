@@ -9,7 +9,7 @@ interface AuthContextType {
   loading: boolean;
   signOut: () => void;
   refreshProfile: () => Promise<void>;
-  login: (token: string, user: UserResponse) => void;
+  login: (accessToken: string, refreshToken: string, user: UserResponse) => void;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -40,14 +40,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  const login = (token: string, userData: UserResponse) => {
-    localStorage.setItem("access_token", token);
+  const login = (accessToken: string, refreshToken: string, userData: UserResponse) => {
+    localStorage.setItem("access_token", accessToken);
+    localStorage.setItem("refresh_token", refreshToken);
     setUser(userData);
     updateRoles(userData);
   };
 
   const signOut = () => {
     localStorage.removeItem("access_token");
+    localStorage.removeItem("refresh_token");
     setUser(null);
     setIsAdmin(false);
     setIsModerator(false);
@@ -75,6 +77,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         })
         .catch(() => {
           localStorage.removeItem("access_token");
+          localStorage.removeItem("refresh_token");
         })
         .finally(() => setLoading(false));
     } else {

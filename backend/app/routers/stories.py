@@ -6,13 +6,9 @@ from app.schemas import StoryCreate, StoryResponse, StoryGroupResponse, UserResp
 from app.auth import get_current_active_user
 from app.routers.auth import user_to_response
 from datetime import datetime, timedelta, timezone
-import os
-import uuid
-import shutil
+from app.services.media import get_media_storage
 
 router = APIRouter(prefix="/api/stories", tags=["Stories"])
-
-UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "uploads")
 
 
 def story_to_response(story: Story, db: Session) -> StoryResponse:
@@ -57,13 +53,8 @@ async def create_story_with_image(
 ):
     image_url = None
     if file and file.filename:
-        ext = file.filename.split(".")[-1]
-        filename = f"{uuid.uuid4()}.{ext}"
-        filepath = os.path.join(UPLOAD_DIR, "stories", filename)
-        os.makedirs(os.path.dirname(filepath), exist_ok=True)
-        with open(filepath, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        image_url = f"/uploads/stories/{filename}"
+        storage = get_media_storage()
+        image_url = storage.save_upload(file, "stories")
 
     story = Story(
         user_id=current_user.id,

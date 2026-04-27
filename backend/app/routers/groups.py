@@ -9,13 +9,10 @@ from app.schemas import (
 from app.auth import get_current_active_user
 from app.routers.auth import user_to_response
 from app.routers.posts import post_to_response
-import os
-import uuid
-import shutil
+from app.services.media import get_media_storage
+from app.realtime import broker
 
 router = APIRouter(prefix="/api/groups", tags=["Groups"])
-
-UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "uploads")
 
 
 def group_to_response(group: Group, db: Session, current_user_id: int) -> GroupResponse:
@@ -139,15 +136,8 @@ async def upload_group_cover(
     if not group:
         raise HTTPException(status_code=404, detail="Group not found")
 
-    ext = file.filename.split(".")[-1] if file.filename else "jpg"
-    filename = f"{uuid.uuid4()}.{ext}"
-    filepath = os.path.join(UPLOAD_DIR, "groups", filename)
-    os.makedirs(os.path.dirname(filepath), exist_ok=True)
-
-    with open(filepath, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-
-    group.cover_image = f"/uploads/groups/{filename}"
+    storage = get_media_storage()
+    group.cover_image = storage.save_upload(file, "groups")
     db.commit()
     db.refresh(group)
     return group_to_response(group, db, current_user.id)
@@ -277,6 +267,18 @@ async def send_group_message(
     db.add(message)
     db.commit()
     db.refresh(message)
+
+    await broker.publish(
+        f"group:{group_id}",
+        {
+            "type": "group_message",
+            "id": message.id,
+            "group_id": group_id,
+            "sender_id": current_user.id,
+            "content": message.content,
+            "created_at": message.created_at,
+        },
+    )
 
     return GroupMessageResponse(
         id=message.id,

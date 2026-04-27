@@ -4,15 +4,27 @@ from app.database import get_db
 from app.models import User, UserRole, UserSettings
 from app.schemas import (
     UserRegister, UserLogin, TokenResponse, UserResponse,
-    VerifyEmailRequest, ResendVerificationRequest, GoogleAuthRequest,
+    VerifyEmailRequest, ResendVerificationRequest, GoogleAuthRequest, RefreshRequest,
 )
 from app.auth import (
     get_password_hash, verify_password, create_access_token,
     generate_verification_code, get_current_user,
+    create_refresh_token, rotate_refresh_token, revoke_refresh_token,
 )
 from datetime import datetime, timedelta, timezone
+from app.services.rate_limit import rate_limiter, RateLimit
+from app.services.email import send_verification_email
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
+
+def _validate_password(password: str) -> None:
+    if len(password) < 10:
+        raise HTTPException(status_code=400, detail="Password must be at least 10 characters")
+    has_lower = any(c.islower() for c in password)
+    has_upper = any(c.isupper() for c in password)
+    has_digit = any(c.isdigit() for c in password)
+    if not (has_lower and has_upper and has_digit):
+        raise HTTPException(status_code=400, detail="Password must include upper, lower, and a digit")
 
 
 def user_to_response(user: User, db: Session) -> UserResponse:
@@ -41,6 +53,9 @@ def user_to_response(user: User, db: Session) -> UserResponse:
 
 @router.post("/register", response_model=TokenResponse)
 async def register(data: UserRegister, db: Session = Depends(get_db)):
+    if not rate_limiter.hit(f"register:{data.email.lower()}", RateLimit(limit=5, window_seconds=60)):
+        raise HTTPException(status_code=429, detail="Too many attempts, try again later")
+    _validate_password(data.password)
     # Check existing email
     if db.query(User).filter(User.email == data.email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -76,15 +91,23 @@ async def register(data: UserRegister, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(user)
 
+    # Send verification email (no-op in dev if SMTP not configured)
+    if user.role != UserRole.HEAD_ADMIN:
+        send_verification_email(user.email, verification_code)
+
     token = create_access_token(data={"sub": user.id})
+    refresh = create_refresh_token(db, user.id)
     return TokenResponse(
         access_token=token,
+        refresh_token=refresh,
         user=user_to_response(user, db),
     )
 
 
 @router.post("/login", response_model=TokenResponse)
 async def login(data: UserLogin, db: Session = Depends(get_db)):
+    if not rate_limiter.hit(f"login:{data.email.lower()}", RateLimit(limit=10, window_seconds=60)):
+        raise HTTPException(status_code=429, detail="Too many attempts, try again later")
     user = db.query(User).filter(User.email == data.email).first()
     if not user or not user.hashed_password:
         raise HTTPException(status_code=401, detail="Invalid credentials")
@@ -97,8 +120,10 @@ async def login(data: UserLogin, db: Session = Depends(get_db)):
     db.commit()
 
     token = create_access_token(data={"sub": user.id})
+    refresh = create_refresh_token(db, user.id)
     return TokenResponse(
         access_token=token,
+        refresh_token=refresh,
         user=user_to_response(user, db),
     )
 
@@ -124,6 +149,8 @@ async def verify_email(data: VerifyEmailRequest, db: Session = Depends(get_db)):
 
 @router.post("/resend-verification")
 async def resend_verification(data: ResendVerificationRequest, db: Session = Depends(get_db)):
+    if not rate_limiter.hit(f"resend_verification:{data.email.lower()}", RateLimit(limit=3, window_seconds=300)):
+        raise HTTPException(status_code=429, detail="Too many attempts, try again later")
     user = db.query(User).filter(User.email == data.email).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -134,31 +161,36 @@ async def resend_verification(data: ResendVerificationRequest, db: Session = Dep
     user.email_verification_code = code
     user.email_verification_expiry = datetime.now(timezone.utc) + timedelta(hours=24)
     db.commit()
-    return {"message": "Verification code resent", "code": code}
+    # Phase 4 will send email; for now do not leak code in responses.
+    send_verification_email(user.email, code)
+    return {"message": "Verification code resent"}
 
 
 @router.post("/google", response_model=TokenResponse)
 async def google_auth(data: GoogleAuthRequest, db: Session = Depends(get_db)):
-    """Handle Google OAuth - in production, validate token with Google API"""
-    # For demo purposes, we decode the token as user info
-    # In production, you would verify with Google's API
+    """Handle Google OAuth by verifying the provided ID token."""
+    from app.config import get_settings
+
+    settings = get_settings()
+    if not settings.google_client_id:
+        raise HTTPException(status_code=500, detail="Google OAuth is not configured")
+
     try:
-        # Simulated Google user info extraction
-        # In a real app, you'd call Google's tokeninfo endpoint
-        import json
-        import base64
-        # Try to decode JWT payload (Google ID tokens are JWTs)
-        parts = data.token.split(".")
-        if len(parts) >= 2:
-            padding = "=" * (4 - len(parts[1]) % 4)
-            payload = json.loads(base64.urlsafe_b64decode(parts[1] + padding))
-            google_id = payload.get("sub", "")
-            email = payload.get("email", "")
-            name = payload.get("name", "")
-        else:
-            raise HTTPException(status_code=400, detail="Invalid Google token")
+        from google.oauth2 import id_token  # type: ignore
+        from google.auth.transport import requests  # type: ignore
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="google-auth dependency not available") from e
+
+    try:
+        info = id_token.verify_oauth2_token(data.token, requests.Request(), settings.google_client_id)
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid Google token format")
+        raise HTTPException(status_code=400, detail="Invalid Google token")
+
+    google_id = str(info.get("sub") or "")
+    email = str(info.get("email") or "")
+    name = str(info.get("name") or "")
+    if not google_id or not email:
+        raise HTTPException(status_code=400, detail="Google token missing required claims")
 
     # Check if user exists by google_id
     user = db.query(User).filter(User.google_id == google_id).first()
@@ -197,8 +229,10 @@ async def google_auth(data: GoogleAuthRequest, db: Session = Depends(get_db)):
     db.refresh(user)
 
     token = create_access_token(data={"sub": user.id})
+    refresh = create_refresh_token(db, user.id)
     return TokenResponse(
         access_token=token,
+        refresh_token=refresh,
         user=user_to_response(user, db),
     )
 
@@ -206,3 +240,23 @@ async def google_auth(data: GoogleAuthRequest, db: Session = Depends(get_db)):
 @router.get("/me", response_model=UserResponse)
 async def get_me(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     return user_to_response(current_user, db)
+
+
+@router.post("/refresh", response_model=TokenResponse)
+async def refresh_tokens(data: RefreshRequest, db: Session = Depends(get_db)):
+    new_refresh, user_id = rotate_refresh_token(db, data.refresh_token)
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    access = create_access_token(data={"sub": user.id})
+    return TokenResponse(
+        access_token=access,
+        refresh_token=new_refresh,
+        user=user_to_response(user, db),
+    )
+
+
+@router.post("/logout")
+async def logout(data: RefreshRequest, db: Session = Depends(get_db)):
+    revoke_refresh_token(db, data.refresh_token)
+    return {"message": "Logged out"}

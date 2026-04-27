@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: knp-connect-frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: knp-connect-frontend
+  template:
+    metadata:
+      labels:
+        app: knp-connect-frontend
+    spec:
+      containers:
+        - name: web
+          image: knp-connect-frontend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 80

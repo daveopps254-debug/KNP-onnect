@@ -29,7 +29,7 @@ const Auth = () => {
     try {
       if (isLogin) {
         const data = await api.post<TokenResponse>("/api/auth/login", { email, password });
-        login(data.access_token, data.user);
+        login(data.access_token, data.refresh_token, data.user);
         toast.success("Welcome back!");
         navigate("/");
       } else {
@@ -45,7 +45,7 @@ const Auth = () => {
           full_name: fullName.trim(),
           password,
         });
-        login(data.access_token, data.user);
+        login(data.access_token, data.refresh_token, data.user);
         toast.success("Welcome to KNP Connect! Your account has been created.");
         navigate("/");
       }

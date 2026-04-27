@@ -1,0 +1,26 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: knp-connect-ingress
+spec:
+  rules:
+    - host: api.your-domain.example
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: knp-connect-api
+                port:
+                  number: 80
+    - host: your-frontend.example
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: knp-connect-frontend
+                port:
+                  number: 80

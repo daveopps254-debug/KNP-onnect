@@ -8,12 +8,10 @@ import StoryViewer from "@/components/StoryViewer";
 import CreateStoryModal from "@/components/CreateStoryModal";
 import { usePosts } from "@/hooks/usePosts";
 import { useStories } from "@/hooks/useStories";
-import { useAuth } from "@/contexts/AuthContext";
 
 const Feed = () => {
   const { posts, isLoading, toggleLike, deletePost } = usePosts();
   const { storyGroups } = useStories();
-  const { profile } = useAuth();
   const [showStoryViewer, setShowStoryViewer] = useState(false);
   const [storyViewerIndex, setStoryViewerIndex] = useState(0);
   const [showCreateStory, setShowCreateStory] = useState(false);
